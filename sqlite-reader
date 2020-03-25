@@ -1,0 +1,81 @@
+#!/bin/bash
+
+FIRST_COMMAND=true
+
+function checkDatabase {
+	read -p 'Database to read> ' database
+
+	if [ -e "$database" ]; then
+		echo "Database: $database"
+	else
+		echo "This database doesn't exist, try again"
+		checkDatabase
+	fi
+}
+
+function readTable {
+	if [ $FIRST_COMMAND = true ]; then
+		echo "Available commands:"
+		echo "- width (sets table width)"
+		echo "- exit (exits)"
+		echo "- read (reads table from database)"
+		echo "- list (lists available tables)"
+
+		FIRST_COMMAND=false
+	fi
+	read -p 'command> ' cmd
+
+	if [ $cmd = "exit" ]; then
+		echo "Exiting"
+		exit 0
+	elif [ $cmd = "width" ]; then
+		read -p 'New table width> ' width
+		echo "New table width: $width"
+		readTable
+	elif [ $cmd = "read" ]; then
+		read -p "Table to read> " table
+		sqlite3 "$database" ".mode column" ".headers on" ".width $width" "select * from $table"
+		readTable
+	elif [ $cmd = "list" ]; then
+		sqlite3 "$database" ".tables"
+		readTable
+	else
+		echo "Unknown command"
+		readTable
+	fi
+}
+
+if [ -e /usr/bin/sqlite3 ]; then
+	echo "SQLite 3 is installed"
+	IS_SQLITE=true
+else
+	echo "SQLite 3 is not installed"
+	IS_SQLITE=false
+fi
+
+if [ $IS_SQLITE = true ]; then
+	checkDatabase
+	readTable
+else
+	read -p 'Would you like to install SQLite 3? (y/n)' inst_sqlite
+fi
+
+if [ $inst_sqlite = "y" ]; then
+	THIS_OS=$(uname)
+
+	if [ $THIS_OS = "Darwin" ]; then
+		mkdir $HOME/temp
+		curl https://www.sqlite.org/2016/sqlite-tools-osx-x86-3110100.zip -o $HOME/temp/sqlite3.zip
+		unzip $HOME/temp/sqlite3.zip -d $HOME/temp
+		sudo mv $HOME/temp/sqlite*/* /usr/bin
+		rm -rf $HOME/temp
+	elif [ $THIS_OS = "Linux" ]; then
+		sudo apt-get install sqlite3
+	else
+		echo "Unsupported OS"
+		exit 1
+	fi
+else
+	echo "You chose to not install sqlite3"
+	exit 0
+fi

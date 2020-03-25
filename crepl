@@ -1,0 +1,151 @@
+#!/bin/bash
+
+prompt="\e[0;94mCRepl>\e[0;32m"
+
+gcclibargs="-lm "
+
+indent=""
+
+echo "creating temporary directory $HOME/crepl-temp"
+mkdir $HOME/crepl-temp
+
+echo "creating lib directory $HOME/crepl-temp/lib"
+mkdir $HOME/crepl-temp/lib
+
+echo "creating header directory $HOME/crepl-temp/head"
+mkdir $HOME/crepl-temp/head
+
+echo ""
+
+echo "CRepl/Rune Zhevitz, GNU GPLv3 license"
+echo ""
+echo "Enter C code line by line, this writes into a temporary file ($HOME/crepl-temp/temp.c)"
+echo "type '.run' when you're done to compile the file and run it"
+echo "All standard libraries including math are available;"
+echo "'.help' for more commands"
+echo ""
+
+function crepl_exit {
+	rm -rf $HOME/crepl-temp
+
+	exit 0
+}
+
+trap "echo -e '\e[0m\nexiting via interrupt' && crepl_exit" SIGINT
+
+function CommandLine {
+	echo -ne "$prompt"
+	IFS="" read -re -p "$indent " line
+	echo -ne "\e[0m"
+
+	IFS=" " read -r -a commandarray <<< "$line"
+
+	cmd="${commandarray[0]}"
+
+	if [ "$cmd" == ".run" ]; then
+		if [ ! -e $HOME/crepl-temp/temp.c ]; then
+			echo -e "\e[1;31mYou haven't written a program to run"
+		else
+			IFS=" " read -r -a gcclibarray <<< "$gcclibargs"
+
+			gcc $HOME/crepl-temp/temp.c -o $HOME/crepl-temp/a.out -L $HOME/crepl-temp/lib -I $HOME/crepl-temp/head "${gcclibarray[@]}"
+
+			$HOME/crepl-temp/a.out ${commandarray[@]:1}
+		fi
+	elif [ "$cmd" == ".dump" ]; then
+		if [ ! -e $HOME/crepl-temp/temp.c ]; then
+			echo -e "\e[1;31mYou haven't written a program to dump"
+
+
+		else
+			cat $HOME/crepl-temp/temp.c
+		fi
+	elif [ "$cmd" == ".clear" ]; then
+		echo -n "" > $HOME/crepl-temp/temp.c
+	elif [ "$cmd" == ".lastdel" ]; then
+		if [ ! -e $HOME/crepl-temp/temp.c ]; then
+			echo -e "\e[1;31mYou haven't written a program yet"
+		else
+			sed -i "$ d" $HOME/crepl-temp/temp.c
+		fi
+	elif [ "$cmd" == ".libinclude" ]; then
+		if [ ! -f "${commandarray[1]}" ]; then
+			echo -e "\e[1;31mInvalid library path: ${commandarray[1]}"
+		else
+			if [[ "$(basename ${commandarray[1]})" == lib* ]]; then
+				if [[ "$(basename ${commandarray[1]})" == *.a ]]; then
+					cp "${commandarray[1]}" $HOME/crepl-temp/lib
+
+					gcclibargs+="-l$(basename ${commandarray[1]} | cut -c 4- | rev | cut -c 3- | rev) "
+				else
+					echo -e "\e[1;31mNot a library: ${commandarray[1]}"
+                                	echo -e "(check that your library's filename starts with 'lib' and ends with '.a')"
+				fi
+			else
+				echo -e "\e[1;31mNot a library: ${commandarray[1]}"
+				echo -e "(check that your library's filename starts with 'lib' and ends with '.a')"
+			fi
+		fi
+	elif [ "$cmd" == ".libexclude" ]; then
+		if [ ! -f "$HOME/crepl-temp/lib/${commandarray[1]}" ]; then
+			echo -e "\e[1;31mInvalid library name ${commandarray[1]}; use .libdump to get a list of library names"
+		else
+			lib_rawname="$(echo "${commandarray[1]}" | cut -c 4- | rev | cut -c 3- | rev)"
+
+			rm "$HOME/crepl-temp/lib/${commandarray[1]}"
+			gcclibargs=$(echo "$gcclibargs" | sed s/"-l$lib_rawname "/''/g)
+		fi
+	elif [ "$cmd" == ".libdump" ]; then
+		echo "GCC library flags:"
+		echo "$gcclibargs"
+		echo ""
+		echo "Libraries in $HOME/crepl-temp/lib:"
+		echo "$(ls $HOME/crepl-temp/lib | grep '.a')"
+	elif [ "$cmd" == ".cphead" ]; then
+		if [ -f "${commandarray[1]}" ]; then
+			if [[ "${commandarray[1]}" == *.h ]]; then
+				cp "${commandarray[1]}" $HOME/crepl-temp/head
+			else
+				echo -e "\e[1;31mNot a header file: ${commandarray[1]}"
+			fi
+		else
+			echo -e "\e[1;31mInvalid target file: ${commandarray[1]}"
+		fi
+	elif [ "$cmd" == ".excludehead" ]; then
+		if [ -f "$HOME/crepl-temp/head/${commandarray[1]}" ]; then
+			rm "$HOME/crepl-temp/head/${commandarray[1]}"
+		else
+			echo -e "\e[1;31mInvalid header name: ${commandarray[1]}; use .hdump to get list of header names"
+		fi
+	elif [ "$cmd" == ".hdump" ]; then
+		echo "Header files in $HOME/crepl-temp/head:"
+		echo "$(ls $HOME/crepl-temp/head | grep '.h')"
+	elif [ "$cmd" == ".indent" ]; then
+		indent="$indent  "
+	elif [ "$cmd" == ".unindent" ]; then
+		indent="${indent%??}"
+	elif [ "$cmd" == ".help" ]; then
+		echo "'.run [program arguments]': runs the program with [program arguments] as arguments, if provided"
+		echo "'.dump': prints the program's code"
+		echo "'.clear': deletes the program's code"
+		echo "'.lastdel': deletes the last line of the program's code"
+		echo "'.libinclude <library>': includes <library> in the compilation process, also creates compiler flags"
+		echo "'.libexclude <library name>': excludes <library name> from the compilation process"
+		echo "'.libdump': prints the GCC library flags and all included libraries"
+		echo "'.cphead <header file path>': copies header files to the header directory"
+		echo "'.excludehead <header file name>': excludes <header file name> from the header directory"
+		echo "'.hdump': prints all included headers"
+		echo "'.indent': indents the REPL and code by 2 spaces"
+		echo "'.unindent': unindents the REPL and code by 2 spaces"
+		echo "'.help': prints this message"
+		echo "'.exit': quits the interpreter"
+	elif [ "$cmd" == ".exit" ]; then
+		crepl_exit
+	else
+		echo "$indent$line" >> $HOME/crepl-temp/temp.c
+	fi
+}
+
+while true; do
+	CommandLine
+done
